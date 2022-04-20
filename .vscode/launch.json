@@ -1,0 +1,31 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Python: train cls",
+      "type": "python",
+      "request": "launch",
+      "program": "codes/train_classification.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "args": ["--batchSize", "2",
+                "--dataset", "/Users/seba/SFU/workspace/VisionLab2/shapenet_data/shapenetcore_partanno_segmentation_benchmark_v0",
+                "--nepoch", "1",
+                "--outf", "outputs",
+                "--workers", "1"
+      ]
+    }
+  ]
+}
