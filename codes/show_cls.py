@@ -130,7 +130,7 @@ for i in range(len(datasets)):
             total_targets = np.concatenate(
                 [total_targets, target.cpu().numpy()])
             a = 0
-            break
+
     matches = (total_targets == total_preds)
     accuracy = 100 * matches.sum() / matches.size
     print('Mean Accuracy = {:.2f}%'.format(accuracy))
