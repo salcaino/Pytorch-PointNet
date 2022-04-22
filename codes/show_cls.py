@@ -100,7 +100,7 @@ critical_points_np = critical_points.cpu().numpy()
 
 random_color = np.random.rand(critical_points_np.shape[0], 3)
 
-showpoints(critical_points_np, None, random_color, background=(1,1,1))
+showpoints(critical_points_np, random_color, None, background=(1,1,1))
 
 datasets = ["train", "test"]
 dataloaders = [train_dataloader, test_dataloader]
