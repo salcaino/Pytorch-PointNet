@@ -65,7 +65,7 @@ val_dataloader = torch.utils.data.DataLoader(
     val_dataset,
     batch_size=opt.batchSize,
     shuffle=False,
-    num_workers=int(opt.workers))
+    num_workers=opt.workers)
 
 print(len(dataset))
 num_classes = len(dataset.classes)
@@ -86,15 +86,27 @@ lr_scheduler = torch.optim.lr_scheduler.StepLR(
 best_acc = -1
 epochs = 0
 
-if opt.model != '':
+classifier = PointNetCls(num_classes=num_classes, feature_transform=opt.feature_transform)
+criterion = nn.NLLLoss()
+optimizer = optim.Adam(classifier.parameters(), lr=0.001, betas=(0.9, 0.999))
+lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5, verbose=False)
+
+classifier = classifier.to(device)
+best_acc = -1
+epochs = 0
+path = "gdrive/MyDrive/VisionLab2_PointNet/pretrained_networks/classification_feat_trans_True.pt"
+load = True
+if load:
     # classifier.load_state_dict(torch.load(opt.model))
-    # model.load_state_dict(torch.load(path))
-    checkpoint = torch.load(opt.model)
-    classifier.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    best_acc = checkpoint['best_acc']
-    epochs = checkpoint['epochs']
-    print(f'Model loaded with best acc of {best_acc}')
+  # model.load_state_dict(torch.load(path))
+  checkpoint = torch.load(path, map_location=device)
+  classifier.load_state_dict(checkpoint['model_state_dict'])
+  optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+  best_acc = checkpoint['best_acc']
+  if 'epoch' in checkpoint:
+    epochs = checkpoint['epoch']
+  print(f'Model loaded with best acc of {best_acc} and trained for {epochs} epochs')
+
 
 classifier.to(device)
 
@@ -105,64 +117,55 @@ learning_rates = []
 for epoch in range(epochs, epochs + opt.nepoch):
     classifier.train()
     epoch_loss = []
-    pbar = tqdm(enumerate(dataloader), desc='Batches', leave=False)
+    pbar = tqdm(enumerate(dataloader), desc='Batches', leave = True)
     for i, data in pbar:
         points, target = data
         target = target[:, 0]
         points = points.transpose(2, 1)
         points, target = points.to(device), target.to(device)
-
+        
         # perform forward and backward paths, optimize network
         scores, trans, trans_feat = classifier(points)
-        loss = criterion(scores, target)
-        loss = loss + \
-            feature_transform_regularizer(
-                trans) + feature_transform_regularizer(trans_feat)
+        loss = criterion(scores, target) 
+        loss = loss + feature_transform_regularizer(trans) + feature_transform_regularizer(trans_feat)
         loss.backward()
         optimizer.step()
         tloss = loss.item()
         epoch_loss.append(tloss)
         pbar.set_description(f"loss: {tloss}")
-        break
-
+        
+    
     classifier.eval()
     total_preds = []
     total_targets = []
     with torch.no_grad():
-        pbar = tqdm(enumerate(val_dataloader, 0))
-        for i, data in pbar:
-            points, target = data
-            target = target[:, 0]
-            points = points.transpose(2, 1)
-            points, target = points.to(device), target.to(device)
+      pbar = tqdm(enumerate(val_dataloader, 0))
+      for i, data in pbar:
+          points, target = data
+          target = target[:, 0]
+          points = points.transpose(2, 1)
+          points, target = points.to(device), target.to(device)
 
-            preds, _, _ = classifier(points)
-            pred_labels = torch.max(preds, dim=1)[1]
+          preds, _, _ = classifier(points)
+          pred_labels = torch.max(preds, dim= 1)[1]
 
-            total_preds = np.concatenate(
-                [total_preds, pred_labels.cpu().numpy()])
-            total_targets = np.concatenate(
-                [total_targets, target.cpu().numpy()])
-            a = 0
+          total_preds = np.concatenate([total_preds, pred_labels.cpu().numpy()])
+          total_targets = np.concatenate([total_targets, target.cpu().numpy()])
+          a = 0
 
-        accuracy = 100 * (total_targets == total_preds).sum() / \
-            len(val_dataset)
-        print('{} Epoch - Accuracy = {:.2f}%'.format(epoch, accuracy))
-        epoch_accuracy.append(accuracy)
+      accuracy = 100 * (total_targets == total_preds).sum() / len(val_dataset)
+      print('{} Epoch - Accuracy = {:.2f}%'.format(epoch, accuracy))
+      epoch_accuracy.append(accuracy)
     learning_rates.append(lr_scheduler.get_last_lr())
     lr_scheduler.step()
     accuracy = round(accuracy, 3)
     if accuracy > best_acc or best_acc < 0:
         best_acc = accuracy
         print(f"Saving new best model with best acc {best_acc}")
-        path = os.path.join(
-            opt.save_dir, f'classification_feat_trans_{opt.feature_transform}.pt')
+        path = os.path.join(opt.save_dir, f'classification_feat_trans_{opt.feature_transform}.pt')
         torch.save({
-            'epoch': epoch+1,
-            'model_state_dict': classifier.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'best_acc': best_acc,
-        }, path)
-    # torch.save({'model':classifier.state_dict(),
-    #             'optimizer': optimizer.state_dict(),
-    #             'epoch': epoch}, os.path.join(opt.save_dir, 'latest_classification.pt'))
+                'epoch': epoch+1,
+                'model_state_dict': classifier.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_acc' : best_acc,
+                }, path)

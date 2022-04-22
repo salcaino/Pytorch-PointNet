@@ -29,41 +29,41 @@ class TNet(nn.Module):
         # Each layer has batchnorm and relu on it
         # layer 1: k -> 64
         self.l1 = nn.Sequential(
-          nn.Conv1d(in_channels=k, out_channels=64, kernel_size=1),
-          nn.BatchNorm1d(num_features=64),
-          nn.ReLU()
+            nn.Conv1d(in_channels=k, out_channels=64, kernel_size=1),
+            nn.BatchNorm1d(num_features=64),
+            nn.ReLU()
         )
         # layer 2:  64 -> 128
         self.l2 = nn.Sequential(
-          nn.Conv1d(in_channels=64, out_channels=128, kernel_size=1),
-          nn.BatchNorm1d(num_features=128),
-          nn.ReLU()
+            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=1),
+            nn.BatchNorm1d(num_features=128),
+            nn.ReLU()
         )
         # layer 3: 128 -> 1024
         self.l3 = nn.Sequential(
-          nn.Conv1d(in_channels=128, out_channels=1024, kernel_size=1),
-          nn.BatchNorm1d(num_features=1024),
-          nn.ReLU()
+            nn.Conv1d(in_channels=128, out_channels=1024, kernel_size=1),
+            nn.BatchNorm1d(num_features=1024),
+            nn.ReLU()
         )
         self.firstblock = nn.Sequential(
-          self.l1,
-          self.l2,
-          self.l3,
+            self.l1,
+            self.l2,
+            self.l3,
         )
 
         # fc 1024 -> 512
         self.fc = nn.Sequential(
-          nn.Linear(in_features=1024, out_features=512),
-          nn.BatchNorm1d(num_features=512),
-          nn.ReLU()
+            nn.Linear(in_features=1024, out_features=512),
+            nn.BatchNorm1d(num_features=512),
+            nn.ReLU()
         )
 
         # fc 512 -> 256
         self.fc2 = nn.Sequential(
-          # nn.Dropout(p=0.3),
-          nn.Linear(in_features=512, out_features=256),
-          nn.BatchNorm1d(num_features=256),
-          nn.ReLU()
+            # nn.Dropout(p=0.3),
+            nn.Linear(in_features=512, out_features=256),
+            nn.BatchNorm1d(num_features=256),
+            nn.ReLU()
         )
         # fc 256 -> k*k (no batchnorm, no relu)
         self.fc3 = nn.Linear(in_features=256, out_features=k*k)
@@ -143,7 +143,8 @@ class PointNetfeat(nn.Module):
         xout = self.l3(xout)
 
         # apply maxpooling
-        xout = torch.max(xout, dim=2, keepdim=True)[0]
+        xout, critical_indices = torch.max(xout, dim=2, keepdim=True)
+        self.last_critical_indices = critical_indices
         xout = xout.view(batch_size, -1)
         # return output, input transformation matrix, feature transformation matrix
         if self.global_feat:  # This shows if we're doing classification or segmentation
@@ -171,6 +172,7 @@ class PointNetCls(nn.Module):
 
     def forward(self, x):
         x, trans, trans_feat = self.feat(x)
+        self.last_critical_points = self.feat.last_critical_indices
         x = F.relu(self.bn1(self.fc1(x)))
         x = F.relu(self.bn2(self.dropout(self.fc2(x))))
         x = self.fc3(x)
@@ -191,7 +193,6 @@ class PointNetDenseCls(nn.Module):
 
     def __init__(self, num_classes=2, feature_transform=False):
         super(PointNetDenseCls, self).__init__()
-        # TODO
         # get global features + point features from PointNetfeat
         self.feature_transform = feature_transform
         self.feat = PointNetfeat(
@@ -206,14 +207,14 @@ class PointNetDenseCls(nn.Module):
             nn.Conv1d(in_channels=256, out_channels=128, kernel_size=1),
             nn.BatchNorm1d(num_features=128),
             nn.ReLU(),
-            nn.Conv1d(in_channels=128, out_channels=num_classes),
-            nn.LogSoftmax(dim=2)
+            nn.Conv1d(in_channels=128, out_channels=num_classes, kernel_size=1),
+            nn.LogSoftmax(dim=1)
         )
 
     def forward(self, x):
-        print(x)
         x, t1_3x3, t2_64x64 = self.feat(x)
         x = self.block(x)
+        return x, t1_3x3, t2_64x64
 
 
 def feature_transform_regularizer(trans):
@@ -228,13 +229,13 @@ def feature_transform_regularizer(trans):
     device = trans.device
     weight = torch.FloatTensor([0.001]).to(device)
     # compute I - AA^t
-    iden_ = torch.eye(feature_size).to(device)
+    iden_ = torch.eye(feature_size).repeat(batch_size, 1, 1).to(device)
     t = trans.clone().to(device).transpose(2, 1)
     a_ = torch.bmm(trans, t)
     input = iden_ - a_
     # compute norm
-    loss = torch.norm(input, p='fro')
-    return loss * weight
+    loss = torch.norm(input, p='fro', dim=1)
+    return loss.mean() * weight
 
 
 if __name__ == '__main__':

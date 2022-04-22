@@ -11,22 +11,10 @@ mousex, mousey = 0.5, 0.5
 zoom = 1.0
 changed = True
 
-def onmouse(*args):
-    global mousex, mousey, changed
-    y = args[1]
-    x = args[2]
-    mousex = x / float(showsz)
-    mousey = y / float(showsz)
-    changed = True
-
-cv2.namedWindow('show3d')
-cv2.moveWindow('show3d', 0, 0)
-cv2.setMouseCallback('show3d', onmouse)
-
 dll = np.ctypeslib.load_library('render_balls_so.so', dir_path)
 
 def showpoints(xyz,c_gt=None, c_pred = None, waittime=0, 
-    showrot=False, magnifyBlue=0, freezerot=False, background=(1,1,1), 
+    showrot=False, magnifyBlue=0, freezerot=False, background=(0,0,0), 
     normalizecolor=True, ballradius=10):
     global showsz, mousex, mousey, zoom, changed
     xyz=xyz-xyz.mean(axis=0)
@@ -106,62 +94,8 @@ def showpoints(xyz,c_gt=None, c_pred = None, waittime=0,
             cv2.putText(show, 'zoom %d%%' % (int(zoom * 100)), (30, showsz - 70), 0,
                         0.5, cv2.cv.CV_RGB(255, 0, 0))
     changed = True
-    while True:
-        if changed:
-            render()
-            changed = False
-        cv2.imshow('show3d', show)
-        if waittime == 0:
-            cmd = cv2.waitKey(10) % 256
-        else:
-            cmd = cv2.waitKey(waittime) % 256
-        if cmd == ord('q'):
-            break
-        elif cmd == ord('Q'):
-            sys.exit(0)
-
-        if cmd == ord('t') or cmd == ord('p'):
-            if cmd == ord('t'):
-                if c_gt is None:
-                    c0 = np.zeros((len(xyz), ), dtype='float32') + 255
-                    c1 = np.zeros((len(xyz), ), dtype='float32') + 255
-                    c2 = np.zeros((len(xyz), ), dtype='float32') + 255
-                else:
-                    c0 = c_gt[:, 0]
-                    c1 = c_gt[:, 1]
-                    c2 = c_gt[:, 2]
-            else:
-                if c_pred is None:
-                    c0 = np.zeros((len(xyz), ), dtype='float32') + 255
-                    c1 = np.zeros((len(xyz), ), dtype='float32') + 255
-                    c2 = np.zeros((len(xyz), ), dtype='float32') + 255
-                else:
-                    c0 = c_pred[:, 0]
-                    c1 = c_pred[:, 1]
-                    c2 = c_pred[:, 2]
-            if normalizecolor:
-                c0 /= (c0.max() + 1e-14) / 255.0
-                c1 /= (c1.max() + 1e-14) / 255.0
-                c2 /= (c2.max() + 1e-14) / 255.0
-            c0 = np.require(c0, 'float32', 'C')
-            c1 = np.require(c1, 'float32', 'C')
-            c2 = np.require(c2, 'float32', 'C')
-            changed = True
-
-        if cmd==ord('n'):
-            zoom*=1.1
-            changed=True
-        elif cmd==ord('m'):
-            zoom/=1.1
-            changed=True
-        elif cmd==ord('r'):
-            zoom=1.0
-            changed=True
-        elif cmd==ord('s'):
-            cv2.imwrite('show3d.png',show)
-        if waittime!=0:
-            break
-    return cmd
+    render()
+    cv2.imwrite('show3d.png',show)
 
 if __name__ == '__main__':
     np.random.seed(100)

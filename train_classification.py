@@ -1,50 +1,63 @@
+# # PointNet
 from __future__ import print_function
 import argparse
 import os
 import random
+
+import numpy as np
 import torch
 import torch.nn.parallel
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
 from dataset import ShapeNetDataset
-from model import PointNetDenseCls, feature_transform_regularizer
+from model import PointNetCls, feature_transform_regularizer
 import torch.nn.functional as F
 from tqdm import tqdm
-import numpy as np
+import matplotlib.pyplot as plt
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--batchSize', type=int, default=8, help='input batch size')
-parser.add_argument('--workers', type=int, help='number of data loading workers', default=4)
-parser.add_argument('--nepoch', type=int, default=25, help='number of epochs to train for')
-parser.add_argument('--model', type=str, default='', help='model path')
-parser.add_argument('--outf', type=str, default='seg', help='output folder')
-parser.add_argument('--dataset', type=str, required=True, help="dataset path")
-parser.add_argument('--class_choice', type=str, default='Chair', help="class_choice")
-parser.add_argument('--feature_transform', default='True', help="use feature transform")
-parser.add_argument('--save_dir', default='../pretrained_networks', help='directory to save model weights')
 
-opt = parser.parse_args()
+parser = argparse.ArgumentParser()
+parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
+parser.add_argument('--num_points', type=int, default=2500, help='input batch size')
+parser.add_argument('--workers', type=int, help='number of data loading workers', default=0)
+parser.add_argument('--model', type=str, default='pretrained_networks/classification_feat_trans_True.pt', help='model path')
+parser.add_argument('--nepoch', type=int, default=250, help='number of epochs to train for')
+parser.add_argument('--outf', type=str, default='cls', help='output folder')
+parser.add_argument('--dataset', type=str, required=False, help="dataset path", default="../shapenet_data/shapenetcore_partanno_segmentation_benchmark_v0")
+parser.add_argument('--feature_transform', default='True', help="use feature transform")
+parser.add_argument('--save_dir', default='pretrained_networks', help='directory to save model weights')
+
+opt = parser.parse_args(args=[])
 print(opt)
+
+if not os.path.exists(opt.save_dir):
+    os.makedirs(opt.save_dir, exist_ok=True)
 try:
-    os.makedirs(opt.outf)
+    os.makedirs(opt.outf, exist_ok=True)
 except OSError:
     pass
+
 
 opt.manualSeed = random.randint(1, 10000)  # fix seed
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 
-classchoice = opt.class_choice
-# classchoice = 'Airplane'
 
+opt.manualSeed = random.randint(1, 10000)  # fix seed
+print("Random Seed: ", opt.manualSeed)
+random.seed(opt.manualSeed)
+torch.manual_seed(opt.manualSeed)
+
+ 
+# ## Dataloaders
 dataset = ShapeNetDataset(
     root=opt.dataset,
-    classification=False,
-    class_choice=[classchoice])
+    classification=True,
+    npoints=opt.num_points)
 
 dataloader = torch.utils.data.DataLoader(
     dataset,
@@ -54,32 +67,35 @@ dataloader = torch.utils.data.DataLoader(
 
 val_dataset = ShapeNetDataset(
     root=opt.dataset,
-    classification=False,
-    class_choice=[classchoice],
+    classification=True,
     split='val',
-    data_augmentation=False)
+    npoints=opt.num_points)
 
 val_dataloader = torch.utils.data.DataLoader(
     val_dataset,
     batch_size=opt.batchSize,
-    shuffle=True,
+    shuffle=False,
     num_workers=int(opt.workers))
 
-num_classes = dataset.num_seg_classes
-print('classes', num_classes)
+print(len(dataset))
 
 path = opt.model
-# path = "pretrained_networks/segmentation_feat_trans_False_Airplane.pt"
-
-# classifier = PointNetDenseCls(num_classes=num_classes, feature_transform=False)
-
-classifier = PointNetDenseCls(num_classes=num_classes, feature_transform=opt.feature_transform)
+# path = "pretrained_networks/classification_feat_trans_True.pt"
 load = len(path) > 0
+
+num_classes = len(dataset.classes)
+print('classes', num_classes)
+# classifier = PointNetCls(num_classes=num_classes, feature_transform=opt.feature_transform)
+classifier = PointNetCls(num_classes=num_classes, feature_transform=False)
+
+
 criterion = nn.NLLLoss()
 optimizer = optim.Adam(classifier.parameters(), lr=0.001, betas=(0.9, 0.999))
 lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5, verbose=False)
 
 classifier = classifier.to(device)
+best_acc = -1
+epochs = 0
 
 if load:
   checkpoint = torch.load(path, map_location=device)
@@ -91,17 +107,13 @@ if load:
   print(f'Model loaded with best acc of {best_acc} and trained for {epochs} epochs')
 
 num_batch = len(dataloader)
-
 epoch_losses = []
 epoch_accuracy = []
 learning_rates = []
-val_ious = []
-train_ious = []
 
-train_epochs = opt.nepoch
-# train_epochs = 50
-
-for epoch in range(epochs, epochs + train_epochs):
+train_epochs = opt.nepoch 
+# ## Train
+for epoch in range(epochs, epochs + opt.nepoch):
     classifier.train()
     epoch_loss = []
     pbar = tqdm(enumerate(dataloader), desc='Batches', leave=True)
@@ -129,7 +141,8 @@ for epoch in range(epochs, epochs + train_epochs):
 
     classifier.eval()
     shape_ious = []
-    
+    total_preds = []
+    total_targets = []
     with torch.no_grad():
         pbar = tqdm(enumerate(val_dataloader, 0))
         for i, data in pbar:
@@ -138,29 +151,16 @@ for epoch in range(epochs, epochs + train_epochs):
             points, target = points.to(device), target.to(device)
             preds, _, _ = classifier(points)
             
-            pred_choice = preds.data.max(1)[1]
-            pred_np = pred_choice.cpu().data.numpy()
-            target_np = target.cpu().data.numpy()
-
-            for shape_idx in range(target_np.shape[0]):
-                # np.unique(target_np[shape_idx])
-                parts = range(num_classes)
-                part_ious = []
-                for part in parts:
-                    I = np.sum(np.logical_and(
-                        pred_np[shape_idx] == part, target_np[shape_idx] == part))
-                    U = np.sum(np.logical_or(
-                        pred_np[shape_idx] == part, target_np[shape_idx] == part))
-                    if U == 0:
-                        iou = 1  # If the union of groundtruth and prediction points is empty, then count part IoU as 1
-                    else:
-                        iou = I / float(U)
-                    part_ious.append(iou)
-                shape_ious.append(np.mean(part_ious))
-
-    print("{} Epoch - mIOU for class {}: {:.4f}".format(epoch,
-            classchoice, np.mean(shape_ious)))
-    accuracy = np.mean(shape_ious)
+            target = target[:, 0]
+            pred_labels = torch.max(preds, dim=1)[1]
+            total_preds = np.concatenate(
+                [total_preds, pred_labels.cpu().numpy()])
+            total_targets = np.concatenate(
+                [total_targets, target.cpu().numpy()])
+            a = 0
+    matches = (total_targets == total_preds)
+    accuracy = 100 * matches.sum() / matches.size
+    print('{} Epoch - Accuracy = {:.2f}%'.format(epoch, accuracy))
 
     epoch_accuracy.append(accuracy)
     learning_rates.append(lr_scheduler.get_last_lr())
@@ -169,7 +169,7 @@ for epoch in range(epochs, epochs + train_epochs):
     if accuracy > best_acc or best_acc < 0:
         best_acc = accuracy
         print(f"Saving new best model with best acc {best_acc}")
-        savepath = os.path.join(opt.save_dir, f'segmentation_feat_trans_{opt.feature_transform}_{classchoice}.pt')
+        savepath = os.path.join(opt.save_dir, f'classification_feat_trans_{opt.feature_transform}.pt')
         torch.save({
             'epoch': epoch+1,
             'model_state_dict': classifier.state_dict(),

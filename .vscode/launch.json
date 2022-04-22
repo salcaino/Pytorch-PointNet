@@ -26,6 +26,18 @@
                 "--outf", "outputs",
                 "--workers", "1"
       ]
-    }
+    },
+    {
+      "name": "Python: show cls",
+      "type": "python",
+      "request": "launch",
+      "program": "codes/show_cls.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "args": [
+                "--model", "pretrained_networks/classification_feat_trans_True.pt",
+      ]
+    },
   ]
 }
