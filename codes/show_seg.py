@@ -11,7 +11,7 @@ from dataset import ShapeNetDataset
 from model import PointNetDenseCls
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-
+import random
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 path = "pretrained_networks/segmentation_feat_trans_True_Chair.pt"
@@ -22,7 +22,7 @@ parser.add_argument('--batchSize', type=int,
                     default=32, help='input batch size')
 parser.add_argument('--workers', type=int,
                     help='number of data loading workers', default=0)
-parser.add_argument('--model', type=str, default=path,  help='model path')
+parser.add_argument('--model', type=str, default=path, action='store', dest="model", help='model path')
 parser.add_argument('--idx', type=int, default=1, help='model index')
 parser.add_argument('--feature_transform', default=True,
                     help="use feature transform", type=bool)
@@ -34,7 +34,7 @@ parser.add_argument('--class_choice', type=str,
 
 opt = parser.parse_args()
 print(opt)
-
+path = opt.model
 classchoice = opt.class_choice
 
 train_dataset = ShapeNetDataset(
@@ -42,6 +42,12 @@ train_dataset = ShapeNetDataset(
     classification=False,
     data_augmentation=False,
     class_choice=[classchoice])
+test_dataset = ShapeNetDataset(
+    root=opt.dataset,
+    classification=False,
+    class_choice=[opt.class_choice],
+    split='test',
+    data_augmentation=False)
 
 train_dataloader = torch.utils.data.DataLoader(
     train_dataset,
@@ -49,11 +55,6 @@ train_dataloader = torch.utils.data.DataLoader(
     shuffle=False,
     num_workers=int(opt.workers))
 
-test_dataset = ShapeNetDataset(
-    root=opt.dataset,
-    class_choice=[opt.class_choice],
-    split='test',
-    data_augmentation=False)
 test_dataloader = torch.utils.data.DataLoader(
     test_dataset,
     batch_size=opt.batchSize,
@@ -64,7 +65,7 @@ num_classes = test_dataset.num_seg_classes
 classifier = PointNetDenseCls(
     num_classes=num_classes, feature_transform=opt.feature_transform)
 classifier = classifier.to(device)
-
+print(f"Loading model from: {path}")
 checkpoint = torch.load(path, map_location=device)
 classifier.load_state_dict(checkpoint['model_state_dict'])
 best_acc = checkpoint['best_acc']
@@ -94,7 +95,6 @@ pred_choice = pred.data.max(dim=1)[1]
 pred_color = cmap[pred_choice.cpu().numpy()[0], :]
 
 showpoints(point_np, gt, pred_color)
-
 datasets = ["train", "test"]
 dataloaders = [train_dataloader, test_dataloader]
 shape_ious = []

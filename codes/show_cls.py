@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 from show3d_balls import showpoints
-
+import random
 
 import matplotlib.pyplot as plt
 path = "pretrained_networks/classification_feat_trans_True.pt"
@@ -30,12 +30,17 @@ parser.add_argument('--num_points', type=int,
 opt = parser.parse_args()
 print(opt)
 
-
 train_dataset = ShapeNetDataset(
     root=opt.dataset,
     classification=True,
     data_augmentation=False,
     npoints=opt.num_points)
+test_dataset = ShapeNetDataset(
+    root=opt.dataset,
+    classification=True,
+    split='test',
+    npoints=opt.num_points,
+    data_augmentation=False)
 
 train_dataloader = torch.utils.data.DataLoader(
     train_dataset,
@@ -44,12 +49,6 @@ train_dataloader = torch.utils.data.DataLoader(
     num_workers=int(opt.workers)
     )
 
-test_dataset = ShapeNetDataset(
-    root=opt.dataset,
-    classification=True,
-    split='test',
-    npoints=opt.num_points,
-    data_augmentation=False)
 test_dataloader = torch.utils.data.DataLoader(
     test_dataset,
     batch_size=opt.batchSize,
@@ -65,7 +64,7 @@ print('classes', num_classes)
 
 classifier = PointNetCls(num_classes=num_classes, feature_transform=opt.feature_transform)
 classifier = classifier.to(device)
-
+print(f"Loading model from: {path}")
 checkpoint = torch.load(path, map_location=device)
 classifier.load_state_dict(checkpoint['model_state_dict'])
 best_acc = checkpoint['best_acc']
@@ -74,6 +73,8 @@ print(f'Model loaded with best acc of {best_acc} and trained for {epochs} epochs
 
 classifier.eval()
 
+# max_idx = len(test_dataset)
+# idx = random.randint(0, max_idx)
 idx = opt.idx
 print("model %d/%d" % (idx, len(test_dataset)))
 points, cls = test_dataset[idx]
