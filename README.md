@@ -1,6 +1,6 @@
 # Pytorch implementation of PointNET
 
-Codes directory 
+Codes directory contain all source code.
 
 
 Ref: https://arxiv.org/abs/1612.00593
