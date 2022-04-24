@@ -2,9 +2,12 @@
 
 Codes directory contain all source code.
 
-
 Ref: https://arxiv.org/abs/1612.00593
 
+## Download data
+```
+!wget https://shapenet.cs.stanford.edu/ericyi/shapenetcore_partanno_segmentation_benchmark_v0.zip --no-check-certificate
+```
 ## Training
 
 ```
